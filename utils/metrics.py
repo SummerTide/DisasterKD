@@ -1,5 +1,6 @@
 """Pixel-level segmentation scores accumulated across the entire test set."""
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -49,6 +50,11 @@ class PixelMetric:
             directory = Path(self.logdir) / 'cm'
             directory.mkdir(parents=True, exist_ok=True)
             np.save(directory / f'confusion_matrix-{time.time_ns()}.npy', cm)
-        return {'iou': scores[:, 0], 'f1': scores[:, 1], 'precision': scores[:, 2],
-                'recall': scores[:, 3], 'mIoU': round(scores[:, 0].mean(), 5),
-                'OA': round(oa, 5), 'Kappa': round(kappa, 5)}
+        result = {'iou': scores[:, 0], 'f1': scores[:, 1], 'precision': scores[:, 2],
+                  'recall': scores[:, 3], 'mIoU': round(scores[:, 0].mean(), 5),
+                  'OA': round(oa, 5), 'Kappa': round(kappa, 5)}
+        if self.logdir is not None:
+            metrics = {key: value.tolist() for key, value in result.items()}
+            metrics['evaluated_pixels'] = int(total)
+            (Path(self.logdir) / 'metrics.json').write_text(json.dumps(metrics, indent=2) + '\n')
+        return result

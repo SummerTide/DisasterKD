@@ -18,6 +18,8 @@ class SegmentationLoader(DataLoader):
     def __init__(self, config, dataset_type):
         transforms = config['transforms'] if 'transforms' in config else default_transforms()
         dataset = dataset_type(config['image_dir'], config['mask_dir'], transforms)
+        if not len(dataset):
+            raise ValueError(f"No JPEG images found in {config['image_dir']}. Run the prepare command or check the data root.")
         training = config.get('training', True)
         cv = config.get('CV', {})
         fold = cv.get('i', -1)

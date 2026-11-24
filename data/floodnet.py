@@ -11,6 +11,7 @@ warnings.filterwarnings('ignore')
 from torch.utils.data import Dataset
 import glob
 import os
+from PIL import Image
 from skimage.io import imread
 from collections import OrderedDict
 from data.loader import SegmentationLoader
@@ -45,7 +46,7 @@ class FloodNetDataset(Dataset):
         self.transforms = transforms
 
     def batch_generate(self, image_dir, mask_dir):
-        rgb_filepath_list = glob.glob(os.path.join(image_dir, '*.jpg'))
+        rgb_filepath_list = sorted(glob.glob(os.path.join(image_dir, '*.jpg')))
 
         logger.info('Dataset images: %d' % len(rgb_filepath_list))
 
@@ -63,7 +64,8 @@ class FloodNetDataset(Dataset):
 
     def __getitem__(self, item):
         image = imread(self.rgb_filepath_list[item])
-        mask = imread(self.cls_filepath_list[item]).astype(np.int64)
+        with Image.open(self.cls_filepath_list[item]) as label:
+            mask = np.array(label, dtype=np.int64)
 
         if self.transforms is not None:
             blob = self.transforms(image=image, mask=mask)

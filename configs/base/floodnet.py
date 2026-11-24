@@ -9,22 +9,10 @@ from albumentations import Compose, OneOf, Normalize
 from albumentations.pytorch import ToTensorV2
 from data.transforms import DivisiblePad, RandomDiscreteScale
 
-train_dir = dict(
-    image_dir=[
-        "/data1/gjc23/Dataset/FloodNet_p1024/train/image_p1024s1024/",
-    ],
-    mask_dir=[
-        "/data1/gjc23/Dataset/FloodNet_p1024/train/label_p1024s1024/",
-    ],
-)
-test_dir = dict(
-    image_dir=[
-        "/data1/gjc23/Dataset/FloodNet/test/test-org-img/",
-    ],
-    mask_dir=[
-        "/data1/gjc23/Dataset/FloodNet/test/test-label-img/",
-    ],
-)
+from data.paths import split_dirs
+
+train_dir = split_dirs('floodnet', 'train')
+test_dir = split_dirs('floodnet', 'test')
 
 TRAIN_DATA_CONFIG = dict(
     image_dir=train_dir['image_dir'],

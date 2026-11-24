@@ -8,22 +8,10 @@ from albumentations import Compose, OneOf, Normalize
 from albumentations.pytorch import ToTensorV2
 from data.transforms import DivisiblePad, RandomDiscreteScale
 
-train_dir = dict(
-    image_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/train/train-img-resized672/",
-    ],
-    mask_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/train/train-label-resized672/",
-    ],
-)
-test_dir = dict(
-    image_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/test/test-org-img/",
-    ],
-    mask_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/test/test-label-img/",
-    ],
-)
+from data.paths import split_dirs
+
+train_dir = split_dirs('rescuenet', 'train')
+test_dir = split_dirs('rescuenet', 'test')
 
 TRAIN_DATA_CONFIG = dict(
     image_dir=train_dir['image_dir'],
