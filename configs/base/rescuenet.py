@@ -5,26 +5,13 @@
 
 from albumentations import HorizontalFlip, VerticalFlip, RandomRotate90, RandomCrop, RandomBrightnessContrast
 from albumentations import Compose, OneOf, Normalize
-from data.transforms import DivisiblePad
-import ever as er
-from ever.api.preprocess.albu import RandomDiscreteScale
+from albumentations.pytorch import ToTensorV2
+from data.transforms import DivisiblePad, RandomDiscreteScale
 
-train_dir = dict(
-    image_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/train/train-img-resized672/",
-    ],
-    mask_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/train/train-label-resized672/",
-    ],
-)
-test_dir = dict(
-    image_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/test/test-org-img/",
-    ],
-    mask_dir=[
-        "/data1/gjc23/Dataset/RescueNet_V1/test/test-label-img/",
-    ],
-)
+from data.paths import split_dirs
+
+train_dir = split_dirs('rescuenet', 'train')
+test_dir = split_dirs('rescuenet', 'test')
 
 TRAIN_DATA_CONFIG = dict(
     image_dir=train_dir['image_dir'],
@@ -40,7 +27,7 @@ TRAIN_DATA_CONFIG = dict(
         Normalize(mean=(123.675, 116.28, 103.53),
                   std=(58.395, 57.12, 57.375),
                   max_pixel_value=1, always_apply=True),
-        er.preprocess.albu.ToTensor()
+        ToTensorV2()
 
     ]),
     CV=dict(k=10, i=-1),
@@ -57,7 +44,7 @@ TEST_DATA_CONFIG = dict(
         Normalize(mean=(123.675, 116.28, 103.53),
                   std=(58.395, 57.12, 57.375),
                   max_pixel_value=1, always_apply=True),
-        er.preprocess.albu.ToTensor()
+        ToTensorV2()
     ]),
     CV=dict(k=10, i=-1),
     training=False,

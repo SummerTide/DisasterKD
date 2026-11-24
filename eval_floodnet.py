@@ -5,21 +5,18 @@
 
 import logging
 import math
+import os
+
 import numpy as np
-from torch import nn
-import ever as er
+import torch
+from utils.metrics import PixelMetric
 from tqdm import tqdm
 
-from module.baseline.deeplabv3 import DeepLabV3
-from module.baseline.pspnet import PSPNet
-from utils.tools import *
-from ever.util.param_util import count_model_parameters
+from utils.tools import count_model_parameters
 from utils.visualize import VisualizeSegmm
 from torch.nn.modules.utils import _pair
 from data.floodnet import FloodNetLoader, COLOR_MAP
 from utils.function import th_divisible_pad
-
-logger = logging.getLogger(__name__)
 
 
 def sliding_window(input_size, kernel_size, stride):
@@ -103,6 +100,10 @@ class SegmSlidingWinInference(object):
             image = image.to(self.device)
             with torch.no_grad():
                 out = model(image)
+                mask_module = kwargs.get('mask_module')
+                if mask_module is not None:
+                    logits, _ = mask_module(out[-1])
+                    out = logits.softmax(dim=1)
             if isinstance(out, list):
                 out = out[-1].softmax(dim=1)
             if size_divisor is not None:
@@ -114,23 +115,26 @@ class SegmSlidingWinInference(object):
         return self.merge(out_list)
 
 
-def evaluate(model, cfg, is_training=False, ckpt_path=None, logger=None):
-    if cfg.SNAPSHOT_DIR is not None:
-        vis_dir = os.path.join(cfg.SNAPSHOT_DIR, 'vis_{}'.format(os.path.basename(ckpt_path)))
+def evaluate(model, cfg, is_training=False, ckpt_path=None, logger=None, mask_module=None):
+    logger = logger or logging.getLogger(__name__)
+    device = next(model.parameters()).device
+    if cfg.SNAPSHOT_DIR is not None and mask_module is None:
+        vis_dir = os.path.join(cfg.SNAPSHOT_DIR, 'vis_{}'.format(os.path.basename(ckpt_path) if ckpt_path else 'current'))
         palette = np.asarray(list(COLOR_MAP.values())).reshape((-1,)).tolist()
         viz_op = VisualizeSegmm(vis_dir, palette)
 
     if not is_training:
-        model_state_dict = torch.load(ckpt_path)
-        model.load_state_dict(model_state_dict, strict=True)
+        state = torch.load(ckpt_path, map_location='cpu')
+        (model if mask_module is None else mask_module).load_state_dict(state, strict=True)
         logger.info('[Load params] from {}'.format(ckpt_path))
         count_model_parameters(model, logger)
 
     model.eval()
-    # print(cfg.TEST_DATA_CONFIG)
+    if mask_module is not None:
+        mask_module.eval()
 
     test_dataloader = FloodNetLoader(cfg.TEST_DATA_CONFIG)
-    metric_op = er.metric.PixelMetric(len(COLOR_MAP.keys()), logdir=cfg.SNAPSHOT_DIR, logger=logger)
+    metric_op = PixelMetric(len(COLOR_MAP), logdir=cfg.SNAPSHOT_DIR, logger=logger)
     segm_helper = SegmSlidingWinInference()
 
     with torch.no_grad():
@@ -139,7 +143,7 @@ def evaluate(model, cfg, is_training=False, ckpt_path=None, logger=None):
             logging.info('Progress - [{} / {}] size = ({}, {})'.format(idx + 1, len(test_dataloader), h, w))
             seg_helper = segm_helper.patch((h, w), patch_size=(1024, 1024), stride=512, transforms=None)
 
-            pred = seg_helper.forward(model, img, size_divisor=32)
+            pred = seg_helper.forward(model, img, size_divisor=32, mask_module=mask_module, device=device)
 
             y_true = gt['cls']
             y_true = y_true.cpu()
@@ -147,24 +151,18 @@ def evaluate(model, cfg, is_training=False, ckpt_path=None, logger=None):
             pred = pred.argmax(dim=1).cpu()
 
             valid_inds = y_true != -1
-            metric_op.forward(y_true[valid_inds], pred[valid_inds])
+            metric_op.update(y_true[valid_inds], pred[valid_inds])
 
-            if cfg.SNAPSHOT_DIR is not None:
+            if cfg.SNAPSHOT_DIR is not None and mask_module is None:
                 for clsmap, imname in zip(pred, gt['fname']):
                     viz_op(clsmap.cpu().numpy().astype(np.uint8), imname.replace('jpg', 'png'))
 
-    metric_op.summary_all()
     torch.cuda.empty_cache()
+    return metric_op.summary_all()
 
 
 if __name__ == '__main__':
-    seed_torch(2333)
+    from utils.evaluation import run_evaluation
 
-    cfg = import_config('baseline_floodnet.deeplabv3_r101')
-
-    model = PSPNet(cfg.MODEL)
-
-    model.cuda()
-
-    ckpt_path = "/data1/gjc23/Code/Knowledge_Distillation_UAV/logs/floodnet/floodnet_deeplabv3_r101_bs16_60k.pth"
-    evaluate(model, cfg, False, ckpt_path, logger)
+    run_evaluation(evaluate, 'baseline_floodnet.deeplabv3_r101',
+                   './logs/floodnet/floodnet_deeplabv3_r101_bs16_60k.pth')

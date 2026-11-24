@@ -10,16 +10,10 @@ warnings.filterwarnings('ignore')
 from torch.utils.data import Dataset
 import glob
 import os
+from PIL import Image
 from skimage.io import imread
-from torch.utils.data import DataLoader
-from albumentations.pytorch import ToTensorV2
-from albumentations import HorizontalFlip, VerticalFlip, RandomRotate90, Normalize, RandomCrop, RandomScale
-from albumentations import OneOf, Compose
-import ever as er
 from collections import OrderedDict
-from ever.interface import ConfigurableMixin
-from torch.utils.data import SequentialSampler, RandomSampler
-from ever.api.data import distributed, CrossValSamplerGenerator
+from data.loader import SegmentationLoader
 import numpy as np
 import logging
 
@@ -52,7 +46,7 @@ class RescueNetDataset(Dataset):
         self.transforms = transforms
 
     def batch_generate(self, image_dir, mask_dir):
-        rgb_filepath_list = glob.glob(os.path.join(image_dir, '*.jpg'))
+        rgb_filepath_list = sorted(glob.glob(os.path.join(image_dir, '*.jpg')))
 
         logger.info('Dataset images: %d' % len(rgb_filepath_list))
 
@@ -71,7 +65,8 @@ class RescueNetDataset(Dataset):
 
     def __getitem__(self, item):
         image = imread(self.rgb_filepath_list[item])
-        mask = imread(self.cls_filepath_list[item]).astype(np.int64) - 1
+        with Image.open(self.cls_filepath_list[item]) as label:
+            mask = np.array(label, dtype=np.int64) - 1
 
         if self.transforms is not None:
             blob = self.transforms(image=image, mask=mask)
@@ -84,41 +79,6 @@ class RescueNetDataset(Dataset):
         return len(self.rgb_filepath_list)
 
 
-@er.registry.DATALOADER.register()
-class RescueNetLoader(DataLoader, ConfigurableMixin):
+class RescueNetLoader(SegmentationLoader):
     def __init__(self, config):
-        ConfigurableMixin.__init__(self, config)
-        dataset = RescueNetDataset(self.config.image_dir, self.config.mask_dir, self.config.transforms)
-        if self.config.CV.i != -1:
-            CV = CrossValSamplerGenerator(dataset, distributed=True, seed=2333)
-            sampler_pairs = CV.k_fold(self.config.CV.i)
-            train_sampler, val_sampler = sampler_pairs[self.config.CV.i]
-            if self.config.training:
-                sampler = train_sampler
-            else:
-                sampler = val_sampler
-        else:
-            sampler = RandomSampler(dataset) if self.config.training else SequentialSampler(dataset)
-
-            super(RescueNetLoader, self).__init__(dataset,
-                                                 self.config.batch_size,
-                                                 sampler=sampler,
-                                                 num_workers=self.config.num_workers,
-                                                 pin_memory=True)
-
-    def set_default_config(self):
-        self.config.update(dict(
-            image_dir=None,
-            mask_dir=None,
-            batch_size=4,
-            num_workers=4,
-            transforms=Compose([
-                OneOf([
-                    HorizontalFlip(True),
-                    VerticalFlip(True),
-                    RandomRotate90(True),
-                ], p=0.75),
-                Normalize(mean=(), std=(), max_pixel_value=1, always_apply=True),
-                ToTensorV2()
-            ]),
-        ))
+        super().__init__(config, RescueNetDataset)
