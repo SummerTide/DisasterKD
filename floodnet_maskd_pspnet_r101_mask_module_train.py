@@ -11,14 +11,14 @@ import torch.optim as optim
 import os.path as osp
 
 from data.floodnet import FloodNetLoader
-from ever.core.iterator import Iterator
+from data.loader import repeat_batches
 from tqdm import tqdm
 from module.baseline.pspnet import PSPNet
 from utils.tools import *
 import torch.nn.functional as F
 from losses.maskd import MaskModule
 from losses.task import SegCrossEntropyLoss
-from eval_mask_floodnet import evaluate
+from eval_floodnet import evaluate
 
 
 parser = argparse.ArgumentParser(description='Run FloodNet_MasKD_PSPNet_r101_Mask_Module method.')
@@ -48,7 +48,7 @@ def main():
     count_model_parameters(teacher, logger)
 
     train_loader = FloodNetLoader(cfg.TRAIN_DATA_CONFIG)
-    train_loader_iter = Iterator(train_loader)
+    train_loader_iter = repeat_batches(train_loader)
 
     epochs = cfg.NUM_STEPS_STOP / len(train_loader)
     logger.info('epochs ~= %.3f' % epochs)
@@ -66,8 +66,7 @@ def main():
         lr = adjust_learning_rate(optimizer, i_iter, cfg)
 
         for sub_i in range(cfg.ITER_SIZE):
-            batch = train_loader_iter.next()
-            images, labels = batch[0]
+            images, labels = next(train_loader_iter)
             images = images.cuda()
             labels['cls'] = labels['cls'].cuda()
 
@@ -94,7 +93,7 @@ def main():
                 print('save model ...')
                 ckpt_path = osp.join(cfg.SNAPSHOT_DIR, cfg.TARGET_SET + '_' + str(cfg.NUM_STEPS_STOP) + '.pth')
                 torch.save(mask_module.state_dict(), ckpt_path)
-                evaluate(teacher, mask_module, cfg, ckpt_path=ckpt_path, logger=logger)
+                evaluate(teacher, cfg, ckpt_path=ckpt_path, logger=logger, mask_module=mask_module)
                 break
 
 

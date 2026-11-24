@@ -55,7 +55,6 @@ def softmax_focalloss(y_pred, y_true, ignore_index=-1, gamma=2.0, normalize=Fals
 
     return losses
 
-import ever.module as erm
 
 def multi_binary_label(batched_mask: torch.Tensor, num_classes, ignore_index):
     labels = []
@@ -72,12 +71,14 @@ def multi_binary_loss(y_pred, y_true, reduction='mean', ignore_index=-1):
     labels = multi_binary_label(y_true, num_classes, ignore_index=ignore_index)
     losses = []
     for cls in range(0, num_classes):
-        bipred = y_pred[:, cls, :, :]
-        bipred = bipred.reshape(y_pred.size(0), 1, y_pred.size(2), y_pred.size(3)).contiguous()
-        bce_loss = erm.loss.label_smoothing_binary_cross_entropy(bipred,
-                                                             labels[cls].reshape_as(bipred).float(), ignore_index=-1)
-        dice_loss = erm.loss.dice_loss_with_logits(bipred, labels[cls], ignore_index=-1)
-        losses.append(bce_loss+dice_loss)
+        logits, target = _masked_ignore(y_pred[:, cls], labels[cls], ignore_index)
+        if target.numel() == 0:
+            losses.append(logits.sum())
+            continue
+        bce_loss = F.binary_cross_entropy_with_logits(logits, torch.where(target == 0, 0.1 + target, target - 0.1))
+        prob = logits.sigmoid()
+        dice_loss = 1 - (2 * (prob * target).sum() + 1) / (prob.sum() + target.sum() + 1)
+        losses.append(bce_loss + dice_loss)
 
     if 'sum' == reduction:
         tloss = sum(losses)
@@ -98,14 +99,14 @@ class SegmentationLoss(nn.Module):
         if 'ce' in self.loss_config:
             loss_dict['ce_loss'] = F.cross_entropy(y_pred, y_true.long(), ignore_index=-1)
         if 'fcloss' in self.loss_config:
-            loss_dict['fc_loss'] = softmax_focalloss(y_pred, y_true, gamma=self.loss_config.fcloss.gamma, normalize=True)
+            loss_dict['fc_loss'] = softmax_focalloss(y_pred, y_true, gamma=self.loss_config['fcloss']['gamma'], normalize=True)
 
         if 'bceloss' in self.loss_config:
             y_predb = y_pred[:, 0, :, :]
             invalidmask = y_true == -1
             bg_y_true = torch.where(y_true>0, torch.ones_like(y_predb), torch.zeros_like(y_predb))
             bg_y_true[invalidmask] = -1
-            loss_dict['bceloss'] = binary_cross_entropy_with_logits(y_predb, bg_y_true, ignore_index=-1) * self.loss_config.bceloss.scaler
+            loss_dict['bceloss'] = binary_cross_entropy_with_logits(y_predb, bg_y_true, ignore_index=-1) * self.loss_config['bceloss']['scaler']
 
 
         if 'tverloss' in self.loss_config:
@@ -113,8 +114,8 @@ class SegmentationLoss(nn.Module):
             invalidmask = y_true == -1
             bg_y_true = torch.where(y_true>0, torch.ones_like(y_predb), torch.zeros_like(y_predb))
             bg_y_true[invalidmask] = -1
-            loss_dict['tverloss'] = tversky_loss_with_logits(y_predb, bg_y_true, self.loss_config.tverloss.alpha,
-                                                             self.loss_config.tverloss.beta, ignore_index=-1) * self.loss_config.tverloss.scaler
+            loss_dict['tverloss'] = tversky_loss_with_logits(y_predb, bg_y_true, self.loss_config['tverloss']['alpha'],
+                                                             self.loss_config['tverloss']['beta'], ignore_index=-1) * self.loss_config['tverloss']['scaler']
 
         if 'mbloss' in self.loss_config:
             loss_dict['mbloss'], losses = multi_binary_loss(y_pred, y_true, ignore_index=-1)

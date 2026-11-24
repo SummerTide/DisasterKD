@@ -6,8 +6,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-import ever as er
-from ever.module.resnet import ResNetEncoder
+from module.baseline.resnet import ResNetEncoder
 
 
 class PSPModule(nn.Module):
@@ -45,26 +44,21 @@ class PSPUpsample(nn.Module):
         return self.conv(p)
 
 
-@er.registry.MODEL.register()
-class PSPNet(er.ERModule):
+class PSPNet(nn.Module):
     def __init__(self, config):
-        super().__init__(config)
-        self.feats = ResNetEncoder(self.config.encoder)
-
-        self.psp = PSPModule(self.config.psp.psp_size, self.config.psp.deep_features_size, self.config.psp.sizes)
+        super().__init__()
+        self.feats = ResNetEncoder(**config.get('encoder', {}))
+        psp = config.get('psp', {})
+        channels = psp.get('deep_features_size', 1024)
+        self.psp = PSPModule(psp.get('psp_size', 2048), channels, psp.get('sizes', (1, 2, 3, 6)))
         self.drop_1 = nn.Dropout2d(p=0.3)
 
-        if self.config.encoder.resnet_type is 'resnet18':
-            self.up_1 = PSPUpsample(128, 256)
-            self.up_2 = PSPUpsample(256, 64)
-            self.up_3 = PSPUpsample(64, 64)
-        else:
-            self.up_1 = PSPUpsample(1024, 256)
-            self.up_2 = PSPUpsample(256, 64)
-            self.up_3 = PSPUpsample(64, 64)
+        self.up_1 = PSPUpsample(channels, 256)
+        self.up_2 = PSPUpsample(256, 64)
+        self.up_3 = PSPUpsample(64, 64)
 
         self.drop_2 = nn.Dropout2d(p=0.15)
-        self.final = nn.Conv2d(64, self.config.classes, kernel_size=1)
+        self.final = nn.Conv2d(64, config.get('classes', 10), kernel_size=1)
 
     def forward(self, x):
         '''
@@ -120,28 +114,6 @@ class PSPNet(er.ERModule):
         p = self.drop_2(p)  # Tensor:(1, 64, 512, 512)  (1, 64, 512, 512)
         logit = self.final(p)  # Tensor:(1, 10, 512, 512)  (1, 10, 512, 512)
         return logit
-
-    def set_default_config(self):
-        self.config.update(dict(
-            encoder=dict(
-                resnet_type='resnet50',
-                include_conv5=True,
-                batchnorm_trainable=True,
-                pretrained=False,
-                freeze_at=0,
-                # 16 or 32
-                output_stride=8,
-                with_cp=(False, False, False, False),
-                norm_layer=nn.BatchNorm2d,
-            ),
-            classes=10,
-            psp=dict(
-                sizes=(1, 2, 3, 6),
-                psp_size=2048,
-                deep_features_size=1024
-            )
-        ))
-
 
 if __name__ == '__main__':
     m = PSPNet(dict())

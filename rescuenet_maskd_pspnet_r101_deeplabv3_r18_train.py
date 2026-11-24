@@ -11,7 +11,7 @@ import torch.optim as optim
 import os.path as osp
 
 from data.rescuenet import RescueNetLoader
-from ever.core.iterator import Iterator
+from data.loader import repeat_batches
 from tqdm import tqdm
 from eval_rescuenet import evaluate
 from module.baseline.pspnet import PSPNet
@@ -56,7 +56,7 @@ def main():
     count_model_parameters(student, logger)
 
     train_loader = RescueNetLoader(cfg.TRAIN_DATA_CONFIG)
-    train_loader_iter = Iterator(train_loader)
+    train_loader_iter = repeat_batches(train_loader)
 
     epochs = cfg.NUM_STEPS_STOP / len(train_loader)
     logger.info('epochs ~= %.3f' % epochs)
@@ -71,8 +71,7 @@ def main():
         lr = adjust_learning_rate(optimizer, i_iter, cfg)
 
         for sub_i in range(cfg.ITER_SIZE):
-            batch = train_loader_iter.next()
-            images, labels = batch[0]
+            images, labels = next(train_loader_iter)
             images = images.cuda()
             labels['cls'] = labels['cls'].cuda()
 

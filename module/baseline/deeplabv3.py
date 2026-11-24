@@ -5,18 +5,19 @@
 # @Project : pspnet.py
 
 import segmentation_models_pytorch as smp
-import ever as er
+from torch import nn
 
 
-@er.registry.MODEL.register()
-class DeepLabV3(er.ERModule, ):
+class DeepLabV3(nn.Module):
     def __init__(self, config):
-        super(DeepLabV3, self).__init__(config)
-        self.features = smp.DeepLabV3(self.config.encoder_name,
-                                    encoder_weights=self.config.encoder_weights,
-                                    classes=self.config.classes,
-                                    activation=None
-                                    )
+        super().__init__()
+        self.features = smp.DeepLabV3(
+            encoder_name=config.get('encoder_name', 'resnet18'),
+            encoder_weights=config.get('encoder_weights'),
+            decoder_channels=config.get('decoder_channels', 256),
+            classes=config.get('classes', 10),
+            activation=None,
+        )
 
     def forward(self, x):
         f = self.features.encoder(x)
@@ -31,17 +32,9 @@ class DeepLabV3(er.ERModule, ):
         logit = self.features.segmentation_head(p)
         return logit
 
-    def set_default_config(self):
-        self.config.update(dict(
-            encoder_name='resnet18',
-            classes=10,
-            encoder_weights=None,
-        ))
-
-
 if __name__ == '__main__':
     import torch
     m = DeepLabV3(dict())
     m.eval()
     o = m(torch.ones(2, 3, 512, 512))
-    print(o.shape)
+    print(o[-1].shape)

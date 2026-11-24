@@ -6,12 +6,26 @@
 
 import random
 import numpy as np
-from albumentations import DualTransform
+from albumentations import DualTransform, RandomScale
 import math
 
 __all__ = [
-    'DivisiblePad',
+    'DivisiblePad', 'RandomDiscreteScale',
 ]
+
+
+class RandomDiscreteScale(RandomScale):
+    """Sample one of the experiment's scale factors for both image and mask."""
+
+    def __init__(self, scales, p=0.5):
+        super().__init__(scale_limit=0, p=p)
+        self.scales = tuple(scales)
+
+    def get_params(self):
+        return {"scale": random.choice(self.scales)}
+
+    def get_transform_init_args_names(self):
+        return ("scales",)
 
 
 class DivisiblePad(DualTransform):
